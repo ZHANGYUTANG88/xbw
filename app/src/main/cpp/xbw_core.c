@@ -914,21 +914,34 @@ Java_com_xbw_tv_core_RetroCore_nativeGetCoreOptions(JNIEnv *env, jclass cls) {
 }
 
 /* UI 环切某个选项的取值：改 current 并标 dirty，下一帧核心自己重读应用 */
-JNIEXPORT void JNICALL
-Java_com_xbw_tv_core_RetroCore_nativeSetCoreOption(JNIEnv *env, jclass cls, jstring key, jint index) {
+JNIEXPORT void JNICALL Java_com_xbw_tv_core_RetroCore_nativeSetCoreOption(JNIEnv *env, jclass cls, jstring key, jint index)
+{
     (void)cls;
     const char *k = (*env)->GetStringUTFChars(env, key, NULL);
-    if (!k) return;
+    if (k == NULL)
+    {
+        return;
+    }
+
     pthread_mutex_lock(&g_opt_lock);
-    core_option *o = find_opt_locked(k);
-    if (o && index >= 0 && index < o->n_values && index != o->current) {
-        o->current = index;
-        g_opt_dirty = 1;
+    // 遍历全局选项链表/数组，找到匹配 key 的选项
+    struct core_option *o = g_option_list;
+    while (o)
+    {
+        if (strcmp(o->key, k) == 0)
+        {
+            // 边界保护：index 不能超出取值范围
+            if (index >= 0 && index < o->n_values)
+            {
+                o->current = index;
+                g_option_dirty = true; // 打上脏标记，主循环下一帧刷新
+            }
+            break;
+        }
+        o = o->next;
     }
     pthread_mutex_unlock(&g_opt_lock);
+
     (*env)->ReleaseStringUTFChars(env, key, k);
 }
 
-/* 修改版 zip 的驱动名可能不在本版 FBNeo 数据表里 → loadCore 失败；
- * 此时核心已 init（dlopen/init/set_environment 都完成了），在同一实例上
- * 
